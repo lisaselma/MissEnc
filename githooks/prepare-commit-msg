@@ -1,0 +1,5 @@
+#!/bin/sh
+# Strip Cursor attribution trailers before commits are finalized.
+MSG_FILE="$1"
+
+perl -i -ne 'print unless /cursoragent@cursor\.com/i || /Co-authored-by:\s*Cursor/i || /Made-with:\s*Cursor/i' "$MSG_FILE"

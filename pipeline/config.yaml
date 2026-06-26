@@ -1,0 +1,101 @@
+# Central configuration for the cell-level missingness pipeline (refactor).
+#
+# Driven entirely by `pipeline_explanation.md` / REFACTOR_SPEC.md:
+#   * three peer encoders (TAPAS-base, TAPAS-large, MiniLM)
+#   * a FLAT list of ablations (co_missing_drop is just one entry)
+#   * outputs land in prediction_data/<encoder>/<ablation>/pred_dataset.parquet
+#
+# Requires: pandas, numpy, pyyaml, torch, transformers, sentence-transformers
+# (h5py only when save_attentions=true).
+
+# ---------------------------------------------------------------------
+# Encoders. Each is self-contained so hidden-size / tokenizer settings
+# stay in one place. The `id` doubles as the prediction_data/<id>/ folder
+# name (§2.5). `family` selects the embedding backend (tapas | minilm).
+# ---------------------------------------------------------------------
+encoders:
+  - id: TAPAS-base
+    name: google/tapas-base
+    family: tapas
+    hidden_size: 768
+    select_one_column: false
+    max_length: 512
+    queries: ""
+  - id: TAPAS-large
+    name: google/tapas-large
+    family: tapas
+    hidden_size: 1024
+    select_one_column: false
+    max_length: 512
+    queries: ""
+  - id: MiniLM
+    name: sentence-transformers/all-MiniLM-L6-v2
+    family: minilm
+    hidden_size: 384
+
+# ---------------------------------------------------------------------
+# Ablations: a FLAT list. co_missing_drop is one entry, NOT a directory
+# split or a multiplier (§1.3). Each (encoder x ablation) pair produces
+# exactly one pred_dataset.parquet.
+#
+#   header : preserve | strip | only_target
+#   target : mask | remove | meanpool
+# ---------------------------------------------------------------------
+ablations:
+  - {id: default,         header: preserve,    target: mask,     co_missing_drop: false}
+  - {id: without_header,  header: strip,       target: mask,     co_missing_drop: false}
+  - {id: without_target,  header: preserve,    target: remove,   co_missing_drop: false}
+  - {id: only_target,     header: only_target, target: mask,     co_missing_drop: false}
+  - {id: meanpool_target, header: preserve,    target: meanpool, co_missing_drop: false}
+  - {id: co_missing_drop, header: preserve,    target: mask,     co_missing_drop: true}
+
+# ---------------------------------------------------------------------
+# Which encoders x ablations main.py runs by default (cartesian product
+# unless restricted on the CLI via --encoder / --ablation).
+# ---------------------------------------------------------------------
+run:
+  encoders: all
+  ablations: all
+
+# ---------------------------------------------------------------------
+# Sampling settings consumed by 00a_random_sampler.py.
+# ---------------------------------------------------------------------
+sampling:
+  n_per_class: 2                 # 5 missing + 5 present per chosen column
+  n_target_types_per_table: 20    # random eligible columns sampled per run
+  random_state: 42               # base seed; XOR'd with per-file run_index
+  datasets_root: datasets        # flat corpus
+  occurrences_csv: samples/special_tokens/occurrences_special_tokens.csv
+  # NOTE: unique-ID / free-text / aggregate-column eligibility filters were
+  # removed from the sampler (not relevant to this research). Only structural
+  # screens remain (internal/index cols, constants, min 5 missing + 5 present).
+
+# ---------------------------------------------------------------------
+# Canonical artifact paths (§2). The old comiss_{drop,keep}/ halves and
+# outputs/intermediates/ tree are retired.
+# ---------------------------------------------------------------------
+paths:
+  datasets_dir: datasets
+  datasets_clean_dir: datasets_clean
+  samples_dir: samples
+  special_tokens_dir: samples/special_tokens
+  tokenized_dir: tokenized
+  prediction_data_dir: prediction_data
+
+# ---------------------------------------------------------------------
+# Runtime defaults (overridable per-run via main.py CLI flags).
+# ---------------------------------------------------------------------
+defaults:
+  save_raw: false               # opt-in: writes sampled.csv / masked.csv per group
+  save_attentions: false        # TAPAS-only HDF5/fp16 attention dump
+
+# ---------------------------------------------------------------------
+# Attention persistence (TAPAS only; consulted when save_attentions=true).
+# ---------------------------------------------------------------------
+attentions:
+  format: hdf5
+  dtype: fp16
+  normalize: row_softmax_preserved   # "none" | "row_softmax_preserved"
+  gzip_level: 4
+  layers_to_keep: [-4, -3, -2, -1]   # null = all layers
+  heads_to_keep: null                # null = all heads

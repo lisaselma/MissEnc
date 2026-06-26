@@ -1,0 +1,5 @@
+#!/bin/sh
+# Final pass: strip Cursor attribution before the commit is accepted.
+MSG_FILE="$1"
+
+perl -i -ne 'print unless /cursoragent@cursor\.com/i || /Co-authored-by:\s*Cursor/i || /Made-with:\s*Cursor/i' "$MSG_FILE"
